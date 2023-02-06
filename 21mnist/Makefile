@@ -67,6 +67,9 @@ clang++_flags += -Wall
 clang++_flags += -Wextra
 clang++_flags += -Wno-strict-overflow
 clang++_flags += -gdwarf-4
+clang++_flags += -fopenmp
+#clang++_flags += -mavx512f
+#clang++_flags += -mfma
 clang++_ldflags :=
 
 #

@@ -198,6 +198,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& add_(T alpha, tensor<T,N0,N1,N2,N3>& b) {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -216,6 +217,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& mul_(T alpha) {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 > 0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -234,6 +236,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& mul_(tensor<T,N0,N1,N2,N3>& b) {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -252,6 +255,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& div_(tensor<T,N0,N1,N2,N3>& b) {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -270,6 +274,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& sqrt_() {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 > 0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -289,6 +294,7 @@ struct tensor {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
     assert(a.n0 == c.n0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -307,6 +313,7 @@ struct tensor {
   tensor<T,N0,N1,N2,N3>& add(T alpha, tensor<T,N0,N1,N2,N3>& b) {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -326,20 +333,15 @@ struct tensor {
   real sum() {
     tensor<T,N0,N1,N2,N3>& a = *this;
     real s0 = 0.0;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
-      real s1 = 0.0;
       for (idx_t i1 = 0; i1 < N1; i1++) {
-        real s2 = 0.0;
         for (idx_t i2 = 0; i2 < N2; i2++) {
-          real s3 = 0.0;
           for (idx_t i3 = 0; i3 < N3; i3++) {
-            s3 += a(i0,i1,i2,i3);
+            s0 += a(i0,i1,i2,i3);
           }
-          s2 += s3;
         }
-        s1 += s2;
       }
-      s0 += s1;
     }
     return s0;
   }
@@ -351,20 +353,15 @@ struct tensor {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 == b.n0);
     double s0 = 0.0;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
-      double s1 = 0.0;
       for (idx_t i1 = 0; i1 < N1; i1++) {
-        double s2 = 0.0;
         for (idx_t i2 = 0; i2 < N2; i2++) {
-          double s3 = 0.0;
           for (idx_t i3 = 0; i3 < N3; i3++) {
-            s3 += a(i0,i1,i2,i3) * b(i0,i1,i2,i3);
+            s0 += a(i0,i1,i2,i3) * b(i0,i1,i2,i3);
           }
-          s2 += s3;
         }
-        s1 += s2;
       }
-      s0 += s1;
     }
     return s0;
   }

@@ -9,6 +9,46 @@
 #include "ada_delta.h"
 #include "grad_check.h"
 
+//#include <x86intrin.h>
+//#if defined(__AVX512F__)
+//enum { simd_width = 64 };       /* 512 bit = 64 bytes */
+//#else
+//#error "sorry, you must have either __AVX512F__"
+//#endif
+//typedef float floatv __attribute__((vector_size(simd_width),__may_alias__,aligned(simd_width)));
+//enum { L = sizeof(floatv) / sizeof(float) };
+//
+//#define V(p) (*((floatv*)&p))
+//
+///* {x, x+1, ..., x+L-1} */
+//floatv Li(float x) {
+//  float a[L];
+//  for (int i = 0; i < L; i++) a[i] = x + i;
+//  return V(a[0]);
+//}
+//
+//floatv U(float x) {
+//  float a[L];
+//  for (int i = 0; i < L; i++) a[i] = x;
+//  return V(a[0]);
+//}
+//
+//floatv vmax(floatv a, floatv b) {
+//  return _mm512_max_ps(a, b);
+//}
+//
+//floatv vsqrt(floatv x) {
+//  return _mm512_sqrt_ps(x);
+//}
+//
+//float vsum(floatv x) {
+//  return (((x[0] + x[1]) + (x[2] + x[3])) + ((x[4] + x[5]) + (x[6] + x[7])))
+//       + (((x[8] + x[9]) + (x[10] + x[11])) + ((x[12] + x[13]) + (x[14] + x[15])));
+//}
+//
+///* user-defined reduction on vec_t */
+//#pragma omp declare reduction (vplus : floatv : omp_out += omp_in) initializer(omp_priv = U(0))
+
 /**
    @brief configuration data for Convolution2D
    @details no configuration currently exist
@@ -181,6 +221,50 @@ struct Convolution2D {
     log_end_fun(lgr, t0, t1);
   }
   /**
+     @brief the omp implementation of forward
+     @param (x) input images
+     @param (training) 1 if it is called in training not testing
+
+     @details called both by cpu implementation (forward_cpu_base) and
+     cuda implementation (forward_cuda_base). the call sequence
+     forward -> forward_cpu_base -> forward_base on cpu and and is
+     forward -> forward_cuda_base -> forward_cuda_base_global ->
+     forward_cuda_base_device -> forward_base
+
+     @sa forward
+     @sa forward_cpu_base
+     @sa forward_cuda_base
+     @sa forward_cuda_base_global
+     @sa forward_cuda_base_device
+  */
+  __device__ __host__ 
+  void forward_cpu_omp_simd(tensor<real,maxB,IC,H,W>& x, int training) {
+    (void)training;
+    idx_t B = x.n0;             // batch size
+    y.set_n0(B);
+    x_ptr = &x;                 // save pointer to input for backward
+  #pragma omp parallel for collapse(4)
+    for (idx_t s = 0; s < B; s++) {       // for each sample
+      for (idx_t oc = 0; oc < OC; oc++) { // for each output channel
+        for (idx_t i = 0; i < H - K + 1; i++) {   // for each output pixel
+          for (idx_t j = 0; j < W - K + 1; j++) { // for each output pixel
+            // calculate a single output pixel
+            real v = 0.0;
+          #pragma omp simd reduction(+:v)
+            for (idx_t ic = 0; ic < IC; ic++) { // input channel
+              for (idx_t di = 0; di < K; di++) {
+                for (idx_t dj = 0; dj < K; dj++) {
+                  v += w(oc,ic,di,dj) * x(s,ic,i+di,j+dj);
+                }
+              }
+            }
+            y(s,oc,i,j) = v + b(oc);
+          }
+        }
+      }
+    }
+  }
+  /**
      @brief the baseline (serial) implementation of forward
      @param (x) input images
      @param (training) 1 if it is called in training not testing
@@ -283,6 +367,8 @@ struct Convolution2D {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      forward_cpu_omp_simd(x, training); break;
     case algo_cpu_base:
       forward_cpu_base(x, training); break;
     case algo_cuda_base:
@@ -370,6 +456,83 @@ struct Convolution2D {
     }
   }
   /**
+     @brief the omp implementation of backward
+     @param (gy) gradient of loss with respect to the output
+     @details called both by cpu implementation (backward_cpu_base)
+     and cuda implementation (backward_cuda_base). the call sequence
+     backward -> backward_cpu_base -> backward_base on cpu and and is
+     backward -> backward_cuda_base -> backward_cuda_base_global ->
+     backward_cuda_base_device -> backward_base
+     @sa backward
+     @sa backward_cpu_base
+     @sa backward_cuda_base
+     @sa backward_cuda_base_global
+     @sa backward_cuda_base_device
+     @sa backward_base
+  */
+  __device__ __host__ 
+  void backward_cpu_omp_simd(tensor<real,maxB,OC,H-K+1,W-K+1>& gy) {
+    idx_t B = gy.n0;
+    gw.set_n0(OC);
+    gb.set_n0(OC);
+    gx.set_n0(B);
+    tensor<real,maxB,IC,H,W>& x = *x_ptr;
+  #pragma omp parallel for collapse(4)
+    for (idx_t oc = 0; oc < OC; oc++) {   // output channel
+      for (idx_t ic = 0; ic < IC; ic++) { // input channel
+        for (idx_t di = 0; di < K; di++) { // kernel pixel
+          for (idx_t dj = 0; dj < K; dj++) { // kernel pixel
+            real v = 0.0;
+            for (idx_t s = 0; s < B; s++) { // training samples
+            #pragma omp simd reduction(+:v)
+              for (idx_t i = 0; i < H - K + 1; i++) { // sample pixel
+                for (idx_t j = 0; j < W - K + 1; j++) { // sample pixel
+                  v += gy(s,oc,i,j) * x(s,ic,i+di,j+dj);
+                }
+              }
+            }
+            gw(oc,ic,di,dj) = v;
+          }
+        }
+      }
+    }
+  #pragma omp parallel for
+    for (idx_t oc = 0; oc < OC; oc++) {
+      real v = 0.0;
+      for (idx_t s = 0; s < B; s++) {
+      #pragma omp simd reduction(+:v)
+        for (idx_t i = 0; i < H - K + 1; i++) {
+          for (idx_t j = 0; j < W - K + 1; j++) {
+            v += gy(s,oc,i,j);
+          }
+        }
+      }
+      gb(oc) = v;
+    }
+  #pragma omp parallel for collapse(4)
+    for (idx_t s = 0; s < B; s++) {
+      for (idx_t ic = 0; ic < IC; ic++) {
+        for (idx_t i = 0; i < H; i++) {
+          for (idx_t j = 0; j < W; j++) {
+            real v = 0.0;
+          #pragma omp simd reduction(+:v)
+            for (idx_t oc = 0; oc < OC; oc++) {
+              for (idx_t di = 0; di < K; di++) {
+                for (idx_t dj = 0; dj < K; dj++) {
+                  if (0 <= i - di && i - di < H - K + 1
+                      && 0 <= j - dj && j - dj < W - K + 1) {
+                    v += gy(s,oc,i-di,j-dj) * w(oc,ic,di,dj);
+                  }
+                }
+              }
+            }
+            gx(s,ic,i,j) = v;
+          }
+        }
+      }
+    }
+  }
+  /**
      @brief the device function of backward called from the 
      global (non-member) function
      @param (gy) gradient of loss with respect to the output
@@ -430,6 +593,8 @@ struct Convolution2D {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      backward_cpu_omp_simd(gy); break;
     case algo_cpu_base:
       backward_cpu_base(gy); break;
     case algo_cuda_base:

@@ -101,6 +101,40 @@ struct Relu {
     }
   }
   /**
+     @brief the omp implementation of forward
+     @param (x) input images
+     @param (training) 1 if it is called in training not testing
+
+     @details called both by cpu implementation (forward_cpu_base) and
+     cuda implementation (forward_cuda_base). the call sequence
+     forward -> forward_cpu_base -> forward_base on cpu and and is
+     forward -> forward_cuda_base -> forward_cuda_base_global ->
+     forward_cuda_base_device -> forward_base
+
+     @sa forward
+     @sa forward_cpu_base
+     @sa forward_cuda_base
+     @sa forward_cuda_base_global
+     @sa forward_cuda_base_device
+  */
+  __device__ __host__
+  void forward_cpu_omp_simd(tensor<real,N0,N1,N2,N3>& x, int training) {
+    (void)training;
+    const idx_t n0 = x.n0;
+    y.set_n0(n0);
+    x_ptr = &x;
+  #pragma omp parallel for collapse(4)
+    for (idx_t i0 = 0; i0 < n0; i0++) {
+      for (idx_t i1 = 0; i1 < N1; i1++) {
+        for (idx_t i2 = 0; i2 < N2; i2++) {
+          for (idx_t i3 = 0; i3 < N3; i3++) {
+            y(i0,i1,i2,i3) = max_r(0, x(i0,i1,i2,i3));
+          }
+        }
+      }
+    }
+  }
+  /**
      @brief the device function of forward called from the 
      global (non-member) function
      @param (x) input images
@@ -161,6 +195,8 @@ struct Relu {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      forward_cpu_omp_simd(x, training); break;
     case algo_cpu_base:
       forward_cpu_base(x, training); break;
     case algo_cuda_base:
@@ -196,6 +232,37 @@ struct Relu {
     const idx_t n0 = gy.n0;
     gx.set_n0(n0);
     tensor<real,N0,N1,N2,N3>& x = *x_ptr;
+    for (idx_t i0 = 0; i0 < n0; i0++) {
+      for (idx_t i1 = 0; i1 < N1; i1++) {
+        for (idx_t i2 = 0; i2 < N2; i2++) {
+          for (idx_t i3 = 0; i3 < N3; i3++) {
+            gx(i0,i1,i2,i3) = (x(i0,i1,i2,i3) >= 0 ? gy(i0,i1,i2,i3) : 0);
+          }
+        }
+      }
+    }
+  }
+  /**
+     @brief the omp implementation of backward
+     @param (gy) gradient of loss with respect to the output
+     @details called both by cpu implementation (backward_cpu_base)
+     and cuda implementation (backward_cuda_base). the call sequence
+     backward -> backward_cpu_base -> backward_base on cpu and and is
+     backward -> backward_cuda_base -> backward_cuda_base_global ->
+     backward_cuda_base_device -> backward_base
+     @sa backward
+     @sa backward_cpu_base
+     @sa backward_cuda_base
+     @sa backward_cuda_base_global
+     @sa backward_cuda_base_device
+     @sa backward_base
+  */
+  __device__ __host__
+  void backward_cpu_omp_simd(tensor<real,N0,N1,N2,N3>& gy) {
+    const idx_t n0 = gy.n0;
+    gx.set_n0(n0);
+    tensor<real,N0,N1,N2,N3>& x = *x_ptr;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -267,6 +334,8 @@ struct Relu {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      backward_cpu_omp_simd(gy); break;
     case algo_cpu_base:
       backward_cpu_base(gy); break;
     case algo_cuda_base:

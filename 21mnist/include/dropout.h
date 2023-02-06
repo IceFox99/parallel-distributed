@@ -114,6 +114,48 @@ struct Dropout {
     }
   }
   /**
+     @brief the omp implementation of forward
+     @param (x) input images
+     @param (training) 1 if it is called in training not testing
+
+     @details called both by cpu implementation (forward_cpu_base) and
+     cuda implementation (forward_cuda_base). the call sequence
+     forward -> forward_cpu_base -> forward_base on cpu and and is
+     forward -> forward_cuda_base -> forward_cuda_base_global ->
+     forward_cuda_base_device -> forward_base
+
+     @sa forward
+     @sa forward_cpu_base
+     @sa forward_cuda_base
+     @sa forward_cuda_base_global
+     @sa forward_cuda_base_device
+  */
+  __device__ __host__
+  void forward_cpu_omp_simd(tensor<real,N0,N1,N2,N3>& x, int training) {
+    const idx_t n0 = x.n0;
+    y.set_n0(n0);
+    /* zero elements with probability of ratio and
+       scale others by 1/(1-ratio) so that the sum 
+       will stay approximately the same */
+    state_forward = rg.get_state();
+    real p = training ? drop_ratio : 0.0;
+    real scale = 1.0 / (1 - p);
+  #pragma omp parallel for collapse(4)
+    for (idx_t i0 = 0; i0 < n0; i0++) {
+      for (idx_t i1 = 0; i1 < N1; i1++) {
+        for (idx_t i2 = 0; i2 < N2; i2++) {
+          for (idx_t i3 = 0; i3 < N3; i3++) {
+            if (rg.rand01() < p) {
+              y(i0,i1,i2,i3) = 0.0;
+            } else {
+              y(i0,i1,i2,i3) = x(i0,i1,i2,i3) * scale;
+            }
+          }
+        }
+      }
+    }
+  }
+  /**
      @brief the device function of forward called from the 
      global (non-member) function
      @param (x) input images
@@ -174,6 +216,8 @@ struct Dropout {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      forward_cpu_omp_simd(x, training); break;
     case algo_cpu_base:
       forward_cpu_base(x, training); break;
     case algo_cuda_base:
@@ -210,6 +254,42 @@ struct Dropout {
     gx.set_n0(n0);
     rg.seed(state_forward);
     real scale = 1.0 / (1 - drop_ratio);
+    for (idx_t i0 = 0; i0 < n0; i0++) {
+      for (idx_t i1 = 0; i1 < N1; i1++) {
+        for (idx_t i2 = 0; i2 < N2; i2++) {
+          for (idx_t i3 = 0; i3 < N3; i3++) {
+            if (rg.rand01() < drop_ratio) {
+              gx(i0,i1,i2,i3) = 0.0;
+            } else {
+              gx(i0,i1,i2,i3) = scale * gy(i0,i1,i2,i3);
+            }
+          }
+        }
+      }
+    }
+  }
+  /**
+     @brief the omp implementation of backward
+     @param (gy) gradient of loss with respect to the output
+     @details called both by cpu implementation (backward_cpu_base)
+     and cuda implementation (backward_cuda_base). the call sequence
+     backward -> backward_cpu_base -> backward_base on cpu and and is
+     backward -> backward_cuda_base -> backward_cuda_base_global ->
+     backward_cuda_base_device -> backward_base
+     @sa backward
+     @sa backward_cpu_base
+     @sa backward_cuda_base
+     @sa backward_cuda_base_global
+     @sa backward_cuda_base_device
+     @sa backward_base
+  */
+  __device__ __host__
+  void backward_cpu_omp_simd(tensor<real,N0,N1,N2,N3>& gy) {
+    const idx_t n0 = gy.n0;
+    gx.set_n0(n0);
+    rg.seed(state_forward);
+    real scale = 1.0 / (1 - drop_ratio);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -285,6 +365,8 @@ struct Dropout {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      backward_cpu_omp_simd(gy); break;
     case algo_cpu_base:
       backward_cpu_base(gy); break;
     case algo_cuda_base:

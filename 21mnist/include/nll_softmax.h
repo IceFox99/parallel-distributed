@@ -141,6 +141,35 @@ struct NLLSoftmax {
     }
   }
   /**
+     @brief the omp implementation of forward
+     @param (x) input images
+     @param (t) true label
+     @param (training) 1 if it is called in training not testing
+
+     @details called both by cpu implementation (forward_cpu_base) and
+     cuda implementation (forward_cuda_base). the call sequence
+     forward -> forward_cpu_base -> forward_base on cpu and and is
+     forward -> forward_cuda_base -> forward_cuda_base_global ->
+     forward_cuda_base_device -> forward_base
+
+     @sa forward
+     @sa forward_cpu_base
+     @sa forward_cuda_base
+     @sa forward_cuda_base_global
+     @sa forward_cuda_base_device
+  */
+  __device__ __host__
+  void forward_cpu_omp_simd(tensor<real,maxB,nC>& x, tensor<idx_t,maxB>& t, int training) {
+    (void)training;
+    const idx_t B = x.n0;
+    l.set_n0(B);
+    log_softmax(x, y);
+  #pragma omp parallel for
+    for (idx_t b = 0; b < B; b++) {
+      l(b) = -y(b,t(b));
+    }
+  }
+  /**
      @brief the device function of forward called from the 
      global (non-member) function
      @param (x) input images
@@ -206,6 +235,8 @@ struct NLLSoftmax {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      forward_cpu_omp_simd(x, t, training); break;
     case algo_cpu_base:
       forward_cpu_base(x, t, training); break;
     case algo_cuda_base:
@@ -240,6 +271,36 @@ struct NLLSoftmax {
   void backward_base(tensor<real,maxB>& gy, tensor<idx_t,maxB>& t) {
     const idx_t B = gy.n0;
     gx.set_n0(B);
+    for (idx_t b = 0; b < B; b++) {
+      for (idx_t c = 0; c < nC; c++) {
+        if (c == t(b)) {
+          gx(b,c) = gy(b) * (-1 + exp(y(b,c)));
+        } else {
+          gx(b,c) = gy(b) *       exp(y(b,c));
+        }
+      }
+    }
+  }
+  /**
+     @brief the omp implementation of backward
+     @param (gy) gradient of loss with respect to the output
+     @details called both by cpu implementation (backward_cpu_base)
+     and cuda implementation (backward_cuda_base). the call sequence
+     backward -> backward_cpu_base -> backward_base on cpu and and is
+     backward -> backward_cuda_base -> backward_cuda_base_global ->
+     backward_cuda_base_device -> backward_base
+     @sa backward
+     @sa backward_cpu_base
+     @sa backward_cuda_base
+     @sa backward_cuda_base_global
+     @sa backward_cuda_base_device
+     @sa backward_base
+  */
+  __device__ __host__
+  void backward_cpu_omp_simd(tensor<real,maxB>& gy, tensor<idx_t,maxB>& t) {
+    const idx_t B = gy.n0;
+    gx.set_n0(B);
+  #pragma omp parallel for collapse(2)
     for (idx_t b = 0; b < B; b++) {
       for (idx_t c = 0; c < nC; c++) {
         if (c == t(b)) {
@@ -312,6 +373,8 @@ struct NLLSoftmax {
     tsc_t t0 = get_tsc();
     switch (opt.algo) {
       /* add case for your implementations here */
+    case algo_cpu_omp_simd:
+      backward_cpu_omp_simd(gy, t); break;
     case algo_cpu_base:
       backward_cpu_base(gy, t); break;
     case algo_cuda_base:
