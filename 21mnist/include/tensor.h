@@ -120,6 +120,7 @@ struct tensor {
     set_n0(n0);
     tensor<T,N0,N1,N2,N3>& a = *this;
     asm volatile("# init_const begins N0=%0 N1=%1 N2=%2 N3=%3" : : "i" (N0), "i" (N1), "i" (N2), "i" (N3));
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -141,6 +142,7 @@ struct tensor {
   void init_uniform(idx_t n0, rnd_gen_t& rg, T p, T q) {
     set_n0(n0);
     tensor<T,N0,N1,N2,N3>& a = *this;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -161,6 +163,7 @@ struct tensor {
   void init_uniform_i(idx_t n0, rnd_gen_t& rg, T p, T q) {
     set_n0(n0);
     tensor<T,N0,N1,N2,N3>& a = *this;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -181,6 +184,7 @@ struct tensor {
   void init_normal(idx_t n0, rnd_gen_t& rg, real mu, real sigma) {
     set_n0(n0);
     tensor<T,N0,N1,N2,N3>& a = *this;
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
@@ -371,6 +375,7 @@ struct tensor {
   void print() {
     tensor<T,N0,N1,N2,N3>& a = *this;
     assert(a.n0 > 0);
+  #pragma omp parallel for collapse(4)
     for (idx_t i0 = 0; i0 < n0; i0++) {
       for (idx_t i1 = 0; i1 < N1; i1++) {
         for (idx_t i2 = 0; i2 < N2; i2++) {
