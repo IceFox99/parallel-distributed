@@ -50,6 +50,50 @@ typedef int idx_t;
  */
 typedef real_type real;
 
+#if defined(__AVX512F__)
+#include <x86intrin.h>
+typedef real realv __attribute__((vector_size(64),__may_alias__,aligned(sizeof(real))));
+enum { VL = sizeof(realv) / sizeof(real) };
+
+#define getV(ten,s,t2,t3,t4) \
+  _mm512_set_ps(\
+    ten(s,t2,t3,t4),\
+    ten(s+1,t2,t3,t4),\
+    ten(s+2,t2,t3,t4),\
+    ten(s+3,t2,t3,t4),\
+    ten(s+4,t2,t3,t4),\
+    ten(s+5,t2,t3,t4),\
+    ten(s+6,t2,t3,t4),\
+    ten(s+7,t2,t3,t4),\
+    ten(s+8,t2,t3,t4),\
+    ten(s+9,t2,t3,t4),\
+    ten(s+10,t2,t3,t4),\
+    ten(s+11,t2,t3,t4),\
+    ten(s+12,t2,t3,t4),\
+    ten(s+13,t2,t3,t4),\
+    ten(s+14,t2,t3,t4),\
+    ten(s+15,t2,t3,t4));
+
+#define getV_2(ten,s,t2,t3,t4) \
+  _mm512_set_ps(\
+    ten(s,t2,t3,t4),\
+    ten(s,t2+1,t3,t4),\
+    ten(s,t2+2,t3,t4),\
+    ten(s,t2+3,t3,t4),\
+    ten(s,t2+4,t3,t4),\
+    ten(s,t2+5,t3,t4),\
+    ten(s,t2+6,t3,t4),\
+    ten(s,t2+7,t3,t4),\
+    ten(s,t2+8,t3,t4),\
+    ten(s,t2+9,t3,t4),\
+    ten(s,t2+10,t3,t4),\
+    ten(s,t2+11,t3,t4),\
+    ten(s,t2+12,t3,t4),\
+    ten(s,t2+13,t3,t4),\
+    ten(s,t2+14,t3,t4),\
+    ten(s,t2+15,t3,t4));
+#endif
+
 /**
    @brief exit(1) (just for setting breakpoints)
  */

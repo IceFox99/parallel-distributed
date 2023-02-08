@@ -9,46 +9,6 @@
 #include "ada_delta.h"
 #include "grad_check.h"
 
-//#include <x86intrin.h>
-//#if defined(__AVX512F__)
-//enum { simd_width = 64 };       /* 512 bit = 64 bytes */
-//#else
-//#error "sorry, you must have either __AVX512F__"
-//#endif
-//typedef float floatv __attribute__((vector_size(simd_width),__may_alias__,aligned(simd_width)));
-//enum { L = sizeof(floatv) / sizeof(float) };
-//
-//#define V(p) (*((floatv*)&p))
-//
-///* {x, x+1, ..., x+L-1} */
-//floatv Li(float x) {
-//  float a[L];
-//  for (int i = 0; i < L; i++) a[i] = x + i;
-//  return V(a[0]);
-//}
-//
-//floatv U(float x) {
-//  float a[L];
-//  for (int i = 0; i < L; i++) a[i] = x;
-//  return V(a[0]);
-//}
-//
-//floatv vmax(floatv a, floatv b) {
-//  return _mm512_max_ps(a, b);
-//}
-//
-//floatv vsqrt(floatv x) {
-//  return _mm512_sqrt_ps(x);
-//}
-//
-//float vsum(floatv x) {
-//  return (((x[0] + x[1]) + (x[2] + x[3])) + ((x[4] + x[5]) + (x[6] + x[7])))
-//       + (((x[8] + x[9]) + (x[10] + x[11])) + ((x[12] + x[13]) + (x[14] + x[15])));
-//}
-//
-///* user-defined reduction on vec_t */
-//#pragma omp declare reduction (vplus : floatv : omp_out += omp_in) initializer(omp_priv = U(0))
-
 /**
    @brief configuration data for Convolution2D
    @details no configuration currently exist
@@ -220,6 +180,7 @@ struct Convolution2D {
     tsc_t t1 = get_tsc();
     log_end_fun(lgr, t0, t1);
   }
+
   /**
      @brief the omp implementation of forward
      @param (x) input images
@@ -243,6 +204,30 @@ struct Convolution2D {
     idx_t B = x.n0;             // batch size
     y.set_n0(B);
     x_ptr = &x;                 // save pointer to input for backward
+#if defined(__AVX512F__)
+  #pragma omp parallel for collapse(4)
+    for (idx_t s = 0; s < B; s+=VL) {       // for each sample
+      for (idx_t oc = 0; oc < OC; oc++) { // for each output channel
+        for (idx_t i = 0; i < H - K + 1; i++) {   // for each output pixel
+          for (idx_t j = 0; j < W - K + 1; j++) { // for each output pixel
+            // calculate a single output pixel
+            realv pv = _mm512_set1_ps(0);
+            for (idx_t ic = 0; ic < IC; ic++) { // input channel
+              for (idx_t di = 0; di < K; di++) {
+                for (idx_t dj = 0; dj < K; dj++) {
+                  realv pw = _mm512_set1_ps(w(oc,ic,di,dj));
+                  realv px = getV(x,s,ic,i+di,j+dj);
+                  pv = _mm512_fmadd_ps(pw,px,pv);
+                }
+              }
+            }
+            for (int temp = 0; temp < VL; temp++)
+              y(s+temp,oc,i,j) = pv[temp] + b(oc);
+          }
+        }
+      }
+    }
+#else
   #pragma omp parallel for collapse(4)
     for (idx_t s = 0; s < B; s++) {       // for each sample
       for (idx_t oc = 0; oc < OC; oc++) { // for each output channel
@@ -263,7 +248,9 @@ struct Convolution2D {
         }
       }
     }
+#endif
   }
+  
   /**
      @brief the baseline (serial) implementation of forward
      @param (x) input images
@@ -477,6 +464,67 @@ struct Convolution2D {
     gb.set_n0(OC);
     gx.set_n0(B);
     tensor<real,maxB,IC,H,W>& x = *x_ptr;
+#if defined(__AVX512F__)
+  #pragma omp parallel for collapse(4)
+    for (idx_t oc = 0; oc < OC; oc+=VL) {   // output channel
+      for (idx_t ic = 0; ic < IC; ic++) { // input channel
+        for (idx_t di = 0; di < K; di++) { // kernel pixel
+          for (idx_t dj = 0; dj < K; dj++) { // kernel pixel
+            realv pv = _mm512_set1_ps(0);
+            for (idx_t s = 0; s < B; s++) { // training samples
+              for (idx_t i = 0; i < H - K + 1; i++) { // sample pixel
+                for (idx_t j = 0; j < W - K + 1; j++) { // sample pixel
+                  realv pgy = getV_2(gy,s,oc,i,j);
+                  realv px = _mm512_set1_ps(x(s,ic,i+di,j+dj));
+                  pv = _mm512_fmadd_ps(pgy,px,pv);
+                }
+              }
+            }
+            for (int temp = 0; temp < VL; temp++)
+              gw(oc+temp,ic,di,dj) = pv[temp];
+          }
+        }
+      }
+    }
+  #pragma omp parallel for
+    for (idx_t oc = 0; oc < OC; oc+=VL) {
+      realv pv = _mm512_set1_ps(0);
+      for (idx_t s = 0; s < B; s++) {
+        for (idx_t i = 0; i < H - K + 1; i++) {
+          for (idx_t j = 0; j < W - K + 1; j++) {
+            realv pgy = getV_2(gy,s,oc,i,j);
+            pv = _mm512_add_ps(pgy,pv);
+          }
+        }
+      }
+      for (int temp = 0; temp < VL; temp++)
+        gb(oc) = pv[temp];
+    }
+  #pragma omp parallel for collapse(4)
+    for (idx_t s = 0; s < B; s+=VL) {
+      for (idx_t ic = 0; ic < IC; ic++) {
+        for (idx_t i = 0; i < H; i++) {
+          for (idx_t j = 0; j < W; j++) {
+            realv pv = _mm512_set1_ps(0);
+            for (idx_t oc = 0; oc < OC; oc++) {
+              for (idx_t di = 0; di < K; di++) {
+                for (idx_t dj = 0; dj < K; dj++) {
+                  if (0 <= i - di && i - di < H - K + 1
+                      && 0 <= j - dj && j - dj < W - K + 1) {
+                    realv vgy = getV(gy,s,oc,i-di,j-dj);
+                    realv vw = _mm512_set1_ps(w(oc,ic,di,dj));
+                    pv = _mm512_fmadd_ps(vgy,vw,pv);
+                  }
+                }
+              }
+            }
+            for (int temp = 0; temp < VL; temp++)
+              gx(s+temp,ic,i,j) = pv[temp];
+          }
+        }
+      }
+    }
+#else
   #pragma omp parallel for collapse(4)
     for (idx_t oc = 0; oc < OC; oc++) {   // output channel
       for (idx_t ic = 0; ic < IC; ic++) { // input channel
@@ -531,6 +579,7 @@ struct Convolution2D {
         }
       }
     }
+#endif
   }
   /**
      @brief the device function of backward called from the 

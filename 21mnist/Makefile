@@ -27,7 +27,7 @@
 #
 vers :=
 vers += cpu_base
-vers += cuda_base
+#vers += cuda_base
 #vers += fast
 
 #
