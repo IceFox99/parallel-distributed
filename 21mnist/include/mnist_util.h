@@ -72,26 +72,34 @@ enum { VL = sizeof(realv) / sizeof(real) };
     ten(s+12,t2,t3,t4),\
     ten(s+13,t2,t3,t4),\
     ten(s+14,t2,t3,t4),\
-    ten(s+15,t2,t3,t4));
+    ten(s+15,t2,t3,t4))
 
-#define getV_2(ten,s,t2,t3,t4) \
-  _mm512_set_ps(\
-    ten(s,t2,t3,t4),\
-    ten(s,t2+1,t3,t4),\
-    ten(s,t2+2,t3,t4),\
-    ten(s,t2+3,t3,t4),\
-    ten(s,t2+4,t3,t4),\
-    ten(s,t2+5,t3,t4),\
-    ten(s,t2+6,t3,t4),\
-    ten(s,t2+7,t3,t4),\
-    ten(s,t2+8,t3,t4),\
-    ten(s,t2+9,t3,t4),\
-    ten(s,t2+10,t3,t4),\
-    ten(s,t2+11,t3,t4),\
-    ten(s,t2+12,t3,t4),\
-    ten(s,t2+13,t3,t4),\
-    ten(s,t2+14,t3,t4),\
-    ten(s,t2+15,t3,t4));
+#define sumV(v) \
+ (v[0] + v[1] + v[2] + v[3] + \
+  v[4] + v[5] + v[6] + v[7] + \
+  v[8] + v[9] + v[10] + v[11] + \
+  v[12] + v[13] + v[14] + v[15])
+
+
+//#define getV_2(ten,s,t2,t3,t4) \
+//  _mm512_set_ps(\
+//    ten(s,t2,t3,t4),\
+//    ten(s,t2+1,t3,t4),\
+//    ten(s,t2+2,t3,t4),\
+//    ten(s,t2+3,t3,t4),\
+//    ten(s,t2+4,t3,t4),\
+//    ten(s,t2+5,t3,t4),\
+//    ten(s,t2+6,t3,t4),\
+//    ten(s,t2+7,t3,t4),\
+//    ten(s,t2+8,t3,t4),\
+//    ten(s,t2+9,t3,t4),\
+//    ten(s,t2+10,t3,t4),\
+//    ten(s,t2+11,t3,t4),\
+//    ten(s,t2+12,t3,t4),\
+//    ten(s,t2+13,t3,t4),\
+//    ten(s,t2+14,t3,t4),\
+//    ten(s,t2+15,t3,t4))
+
 #endif
 
 /**
